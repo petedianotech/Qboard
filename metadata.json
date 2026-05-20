@@ -1,0 +1,6 @@
+{
+  "name": "Qboard",
+  "description": "A powerful, native, highly customizable Android Jetpack Compose keyboard.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

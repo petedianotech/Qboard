@@ -1,0 +1,51 @@
+package com.example.keyboard
+
+import android.content.Context
+import android.content.SharedPreferences
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+
+class KeyboardPreferences(context: Context) {
+    private val prefs: SharedPreferences = context.getSharedPreferences("keyboard_prefs", Context.MODE_PRIVATE)
+
+    private val _themeColor = MutableStateFlow(prefs.getInt("themeColor", 0)) // 0: Auto, 1: Dark, 2: Light
+    val themeColor: StateFlow<Int> = _themeColor
+
+    private val _vibrationEnabled = MutableStateFlow(prefs.getBoolean("vibrationEnabled", true))
+    val vibrationEnabled: StateFlow<Boolean> = _vibrationEnabled
+
+    private val _soundEnabled = MutableStateFlow(prefs.getBoolean("soundEnabled", false))
+    val soundEnabled: StateFlow<Boolean> = _soundEnabled
+
+    private val _autoCapsEnabled = MutableStateFlow(prefs.getBoolean("autoCapsEnabled", true))
+    val autoCapsEnabled: StateFlow<Boolean> = _autoCapsEnabled
+
+    private val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+        when (key) {
+            "themeColor" -> _themeColor.value = prefs.getInt(key, 0)
+            "vibrationEnabled" -> _vibrationEnabled.value = prefs.getBoolean(key, true)
+            "soundEnabled" -> _soundEnabled.value = prefs.getBoolean(key, false)
+            "autoCapsEnabled" -> _autoCapsEnabled.value = prefs.getBoolean(key, true)
+        }
+    }
+
+    init {
+        prefs.registerOnSharedPreferenceChangeListener(listener)
+    }
+
+    fun setThemeColor(theme: Int) = prefs.edit().putInt("themeColor", theme).apply()
+    fun setVibrationEnabled(enabled: Boolean) = prefs.edit().putBoolean("vibrationEnabled", enabled).apply()
+    fun setSoundEnabled(enabled: Boolean) = prefs.edit().putBoolean("soundEnabled", enabled).apply()
+    fun setAutoCapsEnabled(enabled: Boolean) = prefs.edit().putBoolean("autoCapsEnabled", enabled).apply()
+
+    companion object {
+        @Volatile
+        private var INSTANCE: KeyboardPreferences? = null
+
+        fun getInstance(context: Context): KeyboardPreferences {
+            return INSTANCE ?: synchronized(this) {
+                INSTANCE ?: KeyboardPreferences(context.applicationContext).also { INSTANCE = it }
+            }
+        }
+    }
+}
