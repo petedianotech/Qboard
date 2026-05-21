@@ -26,6 +26,9 @@ class KeyboardPreferences(context: Context) {
     private val _predictionEnabled = MutableStateFlow(prefs.getBoolean("predictionEnabled", true))
     val predictionEnabled: StateFlow<Boolean> = _predictionEnabled
 
+    private val _themeAccent = MutableStateFlow(prefs.getInt("themeAccent", 0)) // 0: Cosmic Blue, 1: Sunset Orange, 2: Emerald Green, 3: Crimson Red, 4: Royal Purple
+    val themeAccent: StateFlow<Int> = _themeAccent
+
     private val _cerebrasApiKey = MutableStateFlow(prefs.getString("cerebrasApiKey", "") ?: "")
     val cerebrasApiKey: StateFlow<String> = _cerebrasApiKey
 
@@ -40,6 +43,7 @@ class KeyboardPreferences(context: Context) {
             "autoCapsEnabled" -> _autoCapsEnabled.value = prefs.getBoolean(key, true)
             "keyboardLayout" -> _keyboardLayout.value = prefs.getInt(key, 0)
             "predictionEnabled" -> _predictionEnabled.value = prefs.getBoolean(key, true)
+            "themeAccent" -> _themeAccent.value = prefs.getInt(key, 0)
             "cerebrasApiKey" -> _cerebrasApiKey.value = prefs.getString(key, "") ?: ""
             "aiMood" -> _aiMood.value = prefs.getInt(key, 0)
         }
@@ -50,6 +54,7 @@ class KeyboardPreferences(context: Context) {
     }
 
     fun setThemeColor(theme: Int) = prefs.edit().putInt("themeColor", theme).apply()
+    fun setThemeAccent(accent: Int) = prefs.edit().putInt("themeAccent", accent).apply()
     fun setVibrationEnabled(enabled: Boolean) = prefs.edit().putBoolean("vibrationEnabled", enabled).apply()
     fun setSoundEnabled(enabled: Boolean) = prefs.edit().putBoolean("soundEnabled", enabled).apply()
     fun setAutoCapsEnabled(enabled: Boolean) = prefs.edit().putBoolean("autoCapsEnabled", enabled).apply()

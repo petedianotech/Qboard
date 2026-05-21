@@ -44,6 +44,22 @@ private val vocabulary = listOf(
     "sound", "feedback", "perfect", "awesome", "fast", "reliable", "beautiful", "modern"
 )
 
+private val nextWordPredictions = mapOf(
+    "android" to listOf("app", "development", "keyboard", "device", "studio"),
+    "keyboard" to listOf("layout", "settings", "theme", "prediction", "sound"),
+    "beautiful" to listOf("theme", "modern", "reliable", "design", "keyboard"),
+    "modern" to listOf("beautiful", "reliable", "keyboard", "application", "design"),
+    "the" to listOf("application", "keyboard", "project", "vibration", "sound"),
+    "i" to listOf("want", "think", "say", "know", "go"),
+    "you" to listOf("can", "like", "do", "think", "want"),
+    "to" to listOf("be", "have", "do", "say", "go"),
+    "and" to listOf("reliable", "fast", "modern", "beautiful", "easy"),
+    "prediction" to listOf("strip", "accuracy", "algorithm", "of", "settings"),
+    "vibration" to listOf("feedback", "intensity", "on", "duration", "and"),
+    "sound" to listOf("feedback", "effects", "volume", "on", "enabled"),
+    "cerebras" to listOf("api", "key", "model", "response", "integration")
+)
+
 class ComposeIME : InputMethodService(), LifecycleOwner, ViewModelStoreOwner, SavedStateRegistryOwner {
 
     private val lifecycleRegistry = LifecycleRegistry(this)
@@ -59,8 +75,9 @@ class ComposeIME : InputMethodService(), LifecycleOwner, ViewModelStoreOwner, Sa
     override val viewModelStore: ViewModelStore
         get() = store
 
-    // State to hold the active composing prefix for predictions
+    // State to hold the active composing prefix and last completed word for predictions
     private var composingPrefix by mutableStateOf("")
+    private var lastCompletedWord by mutableStateOf("")
 
     override fun onCreate() {
         super.onCreate()
@@ -81,6 +98,7 @@ class ComposeIME : InputMethodService(), LifecycleOwner, ViewModelStoreOwner, Sa
             setContent {
                 val prefs = remember { KeyboardPreferences.getInstance(this@ComposeIME) }
                 val themeState by prefs.themeColor.collectAsState()
+                val themeAccent by prefs.themeAccent.collectAsState()
                 
                 val isDarkTheme = when (themeState) {
                     1 -> true
@@ -88,10 +106,11 @@ class ComposeIME : InputMethodService(), LifecycleOwner, ViewModelStoreOwner, Sa
                     else -> isSystemInDarkTheme()
                 }
 
-                MyApplicationTheme(darkTheme = isDarkTheme) {
+                MyApplicationTheme(darkTheme = isDarkTheme, accentIndex = themeAccent) {
                     KeyboardView(
                         prefs = prefs,
                         composingPrefix = composingPrefix,
+                        lastCompletedWord = lastCompletedWord,
                         onKeyPressed = { handleKey(it) },
                         onDeletePressed = { handleDelete() },
                         onEnterPressed = { handleEnter() },
@@ -142,12 +161,21 @@ class ComposeIME : InputMethodService(), LifecycleOwner, ViewModelStoreOwner, Sa
         val ic = currentInputConnection
         val textBefore = ic?.getTextBeforeCursor(50, 0)?.toString() ?: ""
         composingPrefix = getLastWord(textBefore)
+        lastCompletedWord = getLastCompletedWord(textBefore)
     }
 
     private fun getLastWord(text: String): String {
         if (text.isEmpty()) return ""
         val lastWordRegex = Regex("[a-zA-Z0-9']+$")
         val match = lastWordRegex.find(text)
+        return match?.value ?: ""
+    }
+
+    private fun getLastCompletedWord(text: String): String {
+        val trimmed = text.trimEnd()
+        if (trimmed.isEmpty()) return ""
+        val lastWordRegex = Regex("[a-zA-Z0-9']+$")
+        val match = lastWordRegex.find(trimmed)
         return match?.value ?: ""
     }
 
@@ -195,6 +223,7 @@ class ComposeIME : InputMethodService(), LifecycleOwner, ViewModelStoreOwner, Sa
 fun KeyboardView(
     prefs: KeyboardPreferences,
     composingPrefix: String,
+    lastCompletedWord: String,
     onKeyPressed: (String) -> Unit,
     onDeletePressed: () -> Unit,
     onEnterPressed: () -> Unit,
@@ -276,13 +305,14 @@ fun KeyboardView(
 
     val keys = if (isSymbols) keysSymbols else keysSelected
 
-    val predictions = remember(composingPrefix, predictionEnabled) {
+    val predictions = remember(composingPrefix, lastCompletedWord, predictionEnabled) {
         if (!predictionEnabled) {
             emptyList()
         } else {
             val prefix = composingPrefix.lowercase()
             if (prefix.isEmpty()) {
-                listOf("the", "I", "you", "to", "and")
+                val completed = lastCompletedWord.lowercase()
+                nextWordPredictions[completed] ?: listOf("the", "I", "you", "to", "and")
             } else {
                 vocabulary.filter { it.startsWith(prefix) }.take(5)
             }

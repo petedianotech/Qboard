@@ -24,6 +24,7 @@ import com.example.ui.theme.MyApplicationTheme
 
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.background
 
 class MainActivity : ComponentActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
@@ -32,6 +33,7 @@ class MainActivity : ComponentActivity() {
     setContent {
       val prefs = remember { KeyboardPreferences.getInstance(this) }
       val themeState by prefs.themeColor.collectAsState()
+      val themeAccent by prefs.themeAccent.collectAsState()
       
       val isDarkTheme = when (themeState) {
           1 -> true
@@ -39,7 +41,7 @@ class MainActivity : ComponentActivity() {
           else -> androidx.compose.foundation.isSystemInDarkTheme()
       }
       
-      MyApplicationTheme(darkTheme = isDarkTheme) {
+      MyApplicationTheme(darkTheme = isDarkTheme, accentIndex = themeAccent) {
         Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
           SettingsScreen(
             modifier = Modifier.padding(innerPadding),
@@ -117,18 +119,34 @@ fun SettingsScreen(
             }
         }
 
+        val themeAccent by prefs.themeAccent.collectAsState()
+
         Card(
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(
                 modifier = Modifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Text("Theme", style = MaterialTheme.typography.titleMedium)
+                Text("Theme Mode", style = MaterialTheme.typography.titleMedium)
                 segmentControl(
                     selectedIndex = themeState,
                     options = listOf("Auto", "Dark", "Light"),
                     onOptionSelected = { prefs.setThemeColor(it) }
+                )
+                
+                Spacer(
+                    modifier = Modifier
+                        .height(1.dp)
+                        .fillMaxWidth()
+                        .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.12f))
+                )
+                
+                Text("Creative Accent Color", style = MaterialTheme.typography.titleMedium)
+                segmentControl(
+                    selectedIndex = themeAccent,
+                    options = listOf("Blue", "Orange", "Green", "Red", "Purple"),
+                    onOptionSelected = { prefs.setThemeAccent(it) }
                 )
             }
         }
@@ -147,9 +165,18 @@ fun SettingsScreen(
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Text("AI Assistant Settings", style = MaterialTheme.typography.titleMedium)
+                var apiKeyLocal by remember { mutableStateOf(cerebrasApiKey) }
+                LaunchedEffect(cerebrasApiKey) {
+                    if (cerebrasApiKey != apiKeyLocal) {
+                        apiKeyLocal = cerebrasApiKey
+                    }
+                }
                 OutlinedTextField(
-                    value = cerebrasApiKey,
-                    onValueChange = { prefs.setCerebrasApiKey(it) },
+                    value = apiKeyLocal,
+                    onValueChange = {
+                        apiKeyLocal = it
+                        prefs.setCerebrasApiKey(it)
+                    },
                     label = { Text("Cerebras API Key") },
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -226,8 +253,12 @@ fun segmentControl(selectedIndex: Int, options: List<String>, onOptionSelected: 
 }
 
 private fun isKeyboardEnabled(context: Context): Boolean {
-    val imm = context.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
-    val enabledMethods = imm.enabledInputMethodList
-    return enabledMethods.any { it.packageName == context.packageName }
+    return try {
+        val imm = context.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
+        val enabledMethods = imm?.enabledInputMethodList ?: emptyList()
+        enabledMethods.any { it.packageName == context.packageName }
+    } catch (e: Exception) {
+        false
+    }
 }
 
