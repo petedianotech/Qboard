@@ -20,12 +20,20 @@ class KeyboardPreferences(context: Context) {
     private val _autoCapsEnabled = MutableStateFlow(prefs.getBoolean("autoCapsEnabled", true))
     val autoCapsEnabled: StateFlow<Boolean> = _autoCapsEnabled
 
+    private val _keyboardLayout = MutableStateFlow(prefs.getInt("keyboardLayout", 0)) // 0: QWERTY, 1: AZERTY, 2: QWERTZ
+    val keyboardLayout: StateFlow<Int> = _keyboardLayout
+
+    private val _predictionEnabled = MutableStateFlow(prefs.getBoolean("predictionEnabled", true))
+    val predictionEnabled: StateFlow<Boolean> = _predictionEnabled
+
     private val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
         when (key) {
             "themeColor" -> _themeColor.value = prefs.getInt(key, 0)
             "vibrationEnabled" -> _vibrationEnabled.value = prefs.getBoolean(key, true)
             "soundEnabled" -> _soundEnabled.value = prefs.getBoolean(key, false)
             "autoCapsEnabled" -> _autoCapsEnabled.value = prefs.getBoolean(key, true)
+            "keyboardLayout" -> _keyboardLayout.value = prefs.getInt(key, 0)
+            "predictionEnabled" -> _predictionEnabled.value = prefs.getBoolean(key, true)
         }
     }
 
@@ -37,6 +45,8 @@ class KeyboardPreferences(context: Context) {
     fun setVibrationEnabled(enabled: Boolean) = prefs.edit().putBoolean("vibrationEnabled", enabled).apply()
     fun setSoundEnabled(enabled: Boolean) = prefs.edit().putBoolean("soundEnabled", enabled).apply()
     fun setAutoCapsEnabled(enabled: Boolean) = prefs.edit().putBoolean("autoCapsEnabled", enabled).apply()
+    fun setKeyboardLayout(layout: Int) = prefs.edit().putInt("keyboardLayout", layout).apply()
+    fun setPredictionEnabled(enabled: Boolean) = prefs.edit().putBoolean("predictionEnabled", enabled).apply()
 
     companion object {
         @Volatile

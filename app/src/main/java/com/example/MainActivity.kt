@@ -22,6 +22,9 @@ import androidx.compose.ui.unit.dp
 import com.example.keyboard.KeyboardPreferences
 import com.example.ui.theme.MyApplicationTheme
 
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+
 class MainActivity : ComponentActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
@@ -59,16 +62,18 @@ fun SettingsScreen(
     var isKeyboardEnabled by remember {
         mutableStateOf(isKeyboardEnabled(context))
     }
+    val scrollState = rememberScrollState()
 
     Column(
         modifier = modifier
             .fillMaxSize()
+            .verticalScroll(scrollState)
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Icon(Icons.Default.Settings, contentDescription = "Settings", modifier = Modifier.size(64.dp), tint = MaterialTheme.colorScheme.primary)
-        Text("Keyboard Settings", style = MaterialTheme.typography.headlineMedium)
+        Text("Qboard Settings", style = MaterialTheme.typography.headlineMedium)
 
         Card(
             modifier = Modifier.fillMaxWidth()
@@ -78,13 +83,37 @@ fun SettingsScreen(
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Text("Step 1: Enable Keyboard", style = MaterialTheme.typography.titleMedium)
-                Text("You must enable the keyboard in system settings first.", style = MaterialTheme.typography.bodyMedium)
+                Text("You must enable Qboard in system settings and select it to begin.", style = MaterialTheme.typography.bodyMedium)
                 Button(onClick = {
                     val intent = Intent(Settings.ACTION_INPUT_METHOD_SETTINGS)
                     context.startActivity(intent)
                 }, modifier = Modifier.fillMaxWidth()) {
                     Text("Go to System Settings")
                 }
+            }
+        }
+
+        val keyboardLayout by prefs.keyboardLayout.collectAsState()
+        val predictionEnabled by prefs.predictionEnabled.collectAsState()
+
+        Card(
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text("Layout & Customize", style = MaterialTheme.typography.titleMedium)
+                
+                Text("Physical Layout", style = MaterialTheme.typography.bodyMedium)
+                segmentControl(
+                    selectedIndex = keyboardLayout,
+                    options = listOf("QWERTY", "AZERTY", "QWERTZ"),
+                    onOptionSelected = { prefs.setKeyboardLayout(it) }
+                )
+
+                Spacer(modifier = Modifier.height(4.dp))
+                PreferenceSwitch("Show Prediction Strip", predictionEnabled) { prefs.setPredictionEnabled(it) }
             }
         }
 
@@ -130,7 +159,7 @@ fun SettingsScreen(
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Text("Step 2: Start Typing!", style = MaterialTheme.typography.titleMedium)
-                Text("Try typing below to see your new keyboard in action.", style = MaterialTheme.typography.bodyMedium)
+                Text("Try typing below to see Qboard in action.", style = MaterialTheme.typography.bodyMedium)
                 var text by remember { mutableStateOf("") }
                 OutlinedTextField(
                     value = text,

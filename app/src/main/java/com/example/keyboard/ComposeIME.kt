@@ -6,6 +6,7 @@ import android.view.HapticFeedbackConstants
 import android.view.KeyEvent
 import android.view.View
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
@@ -26,6 +27,22 @@ import androidx.lifecycle.*
 import androidx.savedstate.*
 import com.example.ui.theme.MyApplicationTheme
 
+private val vocabulary = listOf(
+    "the", "be", "to", "of", "and", "a", "in", "that", "have", "I",
+    "it", "for", "not", "on", "with", "he", "as", "you", "do", "at",
+    "this", "but", "his", "by", "from", "they", "we", "say", "her", "she",
+    "or", "an", "will", "my", "one", "all", "would", "there", "their", "what",
+    "so", "up", "out", "if", "about", "who", "get", "which", "go", "me",
+    "when", "make", "can", "like", "time", "no", "just", "him", "know", "take",
+    "people", "into", "year", "your", "good", "some", "could", "them", "see", "other",
+    "than", "then", "now", "look", "only", "come", "its", "over", "think", "also",
+    "back", "after", "use", "two", "how", "our", "work", "first", "well", "way",
+    "even", "new", "want", "because", "any", "these", "give", "day", "most", "us",
+    "android", "keyboard", "compose", "qboard", "typing", "swift", "github", "release",
+    "application", "development", "project", "custom", "theme", "prediction", "vibration",
+    "sound", "feedback", "perfect", "awesome", "fast", "reliable", "beautiful", "modern"
+)
+
 class ComposeIME : InputMethodService(), LifecycleOwner, ViewModelStoreOwner, SavedStateRegistryOwner {
 
     private val lifecycleRegistry = LifecycleRegistry(this)
@@ -40,6 +57,9 @@ class ComposeIME : InputMethodService(), LifecycleOwner, ViewModelStoreOwner, Sa
 
     override val viewModelStore: ViewModelStore
         get() = store
+
+    // State to hold the active composing prefix for predictions
+    private var composingPrefix by mutableStateOf("")
 
     override fun onCreate() {
         super.onCreate()
@@ -70,31 +90,86 @@ class ComposeIME : InputMethodService(), LifecycleOwner, ViewModelStoreOwner, Sa
                 MyApplicationTheme(darkTheme = isDarkTheme) {
                     KeyboardView(
                         prefs = prefs,
+                        composingPrefix = composingPrefix,
                         onKeyPressed = { handleKey(it) },
                         onDeletePressed = { handleDelete() },
                         onEnterPressed = { handleEnter() },
-                        onSpacePressed = { handleSpace() }
+                        onSpacePressed = { handleSpace() },
+                        onSuggestionSelected = { handleSuggestionSelected(it) }
                     )
                 }
             }
         }
     }
 
+    override fun onStartInputView(info: android.view.inputmethod.EditorInfo?, restarting: Boolean) {
+        super.onStartInputView(info, restarting)
+        updateComposingPrefix()
+    }
+
+    override fun onUpdateSelection(
+        oldSelStart: Int, oldSelEnd: Int,
+        newSelStart: Int, newSelEnd: Int,
+        candidatesStart: Int, candidatesEnd: Int
+    ) {
+        super.onUpdateSelection(oldSelStart, oldSelEnd, newSelStart, newSelEnd, candidatesStart, candidatesEnd)
+        updateComposingPrefix()
+    }
+
     private fun handleKey(key: String) {
         currentInputConnection?.commitText(key, 1)
+        updateComposingPrefix()
     }
     
     private fun handleDelete() {
         currentInputConnection?.deleteSurroundingText(1, 0)
+        updateComposingPrefix()
     }
     
     private fun handleEnter() {
         currentInputConnection?.sendKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER))
         currentInputConnection?.sendKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ENTER))
+        updateComposingPrefix()
     }
     
     private fun handleSpace() {
         currentInputConnection?.commitText(" ", 1)
+        updateComposingPrefix()
+    }
+
+    private fun updateComposingPrefix() {
+        val ic = currentInputConnection
+        val textBefore = ic?.getTextBeforeCursor(50, 0)?.toString() ?: ""
+        composingPrefix = getLastWord(textBefore)
+    }
+
+    private fun getLastWord(text: String): String {
+        if (text.isEmpty()) return ""
+        val lastWordRegex = Regex("[a-zA-Z0-9']+$")
+        val match = lastWordRegex.find(text)
+        return match?.value ?: ""
+    }
+
+    private fun handleSuggestionSelected(suggestion: String) {
+        val ic = currentInputConnection ?: return
+        val prefixLength = composingPrefix.length
+        if (prefixLength > 0) {
+            ic.deleteSurroundingText(prefixLength, 0)
+        }
+        val casedSuggestion = matchCasing(composingPrefix, suggestion)
+        ic.commitText("$casedSuggestion ", 1)
+        updateComposingPrefix()
+    }
+
+    private fun matchCasing(prefix: String, word: String): String {
+        if (prefix.isEmpty()) return word
+        if (prefix[0].isUpperCase()) {
+            if (prefix.all { it.isUpperCase() } && prefix.length > 1) {
+                return word.uppercase()
+            }
+            return word.replaceFirstChar { it.uppercase() }
+        }
+        return word.lowercase()
     }
 
     override fun onDestroy() {
@@ -109,10 +184,12 @@ class ComposeIME : InputMethodService(), LifecycleOwner, ViewModelStoreOwner, Sa
 @Composable
 fun KeyboardView(
     prefs: KeyboardPreferences,
+    composingPrefix: String,
     onKeyPressed: (String) -> Unit,
     onDeletePressed: () -> Unit,
     onEnterPressed: () -> Unit,
     onSpacePressed: () -> Unit,
+    onSuggestionSelected: (String) -> Unit
 ) {
     var isShifted by remember { mutableStateOf(false) }
     var isSymbols by remember { mutableStateOf(false) }
@@ -124,6 +201,8 @@ fun KeyboardView(
     val vibrationEnabled by prefs.vibrationEnabled.collectAsState()
     val soundEnabled by prefs.soundEnabled.collectAsState()
     val autoCapsEnabled by prefs.autoCapsEnabled.collectAsState()
+    val keyboardLayout by prefs.keyboardLayout.collectAsState()
+    val predictionEnabled by prefs.predictionEnabled.collectAsState()
 
     val onCheckCaps: () -> Boolean = {
         val ic = (context as? InputMethodService)?.currentInputConnection
@@ -138,6 +217,26 @@ fun KeyboardView(
         listOf("123", ",", "SPACE", ".", "ENTER")
     )
 
+    val keysAZERTY = listOf(
+        listOf("a", "z", "e", "r", "t", "y", "u", "i", "o", "p"),
+        listOf("q", "s", "d", "f", "g", "h", "j", "k", "l", "m"),
+        listOf("SHIFT", "w", "x", "c", "v", "b", "n", ",", "DEL"),
+        listOf("123", ".", "SPACE", "?", "ENTER")
+    )
+
+    val keysQWERTZ = listOf(
+        listOf("q", "w", "e", "r", "t", "z", "u", "i", "o", "p"),
+        listOf("a", "s", "d", "f", "g", "h", "j", "k", "l"),
+        listOf("SHIFT", "y", "x", "c", "v", "b", "n", "m", "DEL"),
+        listOf("123", ",", "SPACE", ".", "ENTER")
+    )
+
+    val keysSelected = when (keyboardLayout) {
+        1 -> keysAZERTY
+        2 -> keysQWERTZ
+        else -> keysQWERTY
+    }
+
     val keysSymbols = listOf(
         listOf("1", "2", "3", "4", "5", "6", "7", "8", "9", "0"),
         listOf("@", "#", "$", "%", "&", "-", "+", "(", ")"),
@@ -145,7 +244,20 @@ fun KeyboardView(
         listOf("123", ",", "SPACE", ".", "ENTER") 
     )
 
-    val keys = if (isSymbols) keysSymbols else keysQWERTY
+    val keys = if (isSymbols) keysSymbols else keysSelected
+
+    val predictions = remember(composingPrefix, predictionEnabled) {
+        if (!predictionEnabled) {
+            emptyList()
+        } else {
+            val prefix = composingPrefix.lowercase()
+            if (prefix.isEmpty()) {
+                listOf("the", "I", "you", "to", "and")
+            } else {
+                vocabulary.filter { it.startsWith(prefix) }.take(5)
+            }
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -154,6 +266,57 @@ fun KeyboardView(
             .padding(4.dp)
             .padding(bottom = 8.dp) 
     ) {
+        // Predictions Strip
+        if (predictionEnabled && predictions.isNotEmpty()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(46.dp)
+                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
+                    .padding(horizontal = 4.dp),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                for (suggestion in predictions) {
+                    val casedOpt = remember(composingPrefix, suggestion) {
+                        if (composingPrefix.isNotEmpty() && composingPrefix[0].isUpperCase()) {
+                            if (composingPrefix.all { it.isUpperCase() } && composingPrefix.length > 1) {
+                                suggestion.uppercase()
+                            } else {
+                                suggestion.replaceFirstChar { it.uppercase() }
+                            }
+                        } else {
+                            suggestion
+                        }
+                    }
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight()
+                            .clickable { onSuggestionSelected(casedOpt) },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = casedOpt,
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    if (suggestion != predictions.last()) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxHeight(0.35f)
+                                .width(1.dp)
+                                .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.2f))
+                        )
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.height(4.dp))
+        }
+
+        // Keyboard Keys
         for (row in keys) {
             Row(
                 modifier = Modifier

@@ -27,16 +27,12 @@ jobs:
       run: gradle wrapper || true
 
     - name: Generate Keystore for Release
-      run: keytool -genkeypair -alias upload -keyalg RSA -keysize 2048 -validity 10000 -keystore my-upload-key.jks -dname "CN=Qboard, OU=App, O=Org, L=City, ST=State, C=US" -storepass password -keypass password
-      env:
-        KEYSTORE_PATH: my-upload-key.jks
-        STORE_PASSWORD: password
-        KEY_PASSWORD: password
+      run: keytool -genkeypair -alias upload -keyalg RSA -keysize 2048 -validity 10000 -keystore ${{ github.workspace }}/my-upload-key.jks -dname "CN=Qboard, OU=App, O=Org, L=City, ST=State, C=US" -storepass password -keypass password
 
     - name: Build with Gradle
       run: ./gradlew assembleRelease --no-daemon
       env:
-        KEYSTORE_PATH: my-upload-key.jks
+        KEYSTORE_PATH: ${{ github.workspace }}/my-upload-key.jks
         STORE_PASSWORD: password
         KEY_PASSWORD: password
 
