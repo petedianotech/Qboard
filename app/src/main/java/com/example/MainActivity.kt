@@ -136,6 +136,32 @@ fun SettingsScreen(
         val vibrationEnabled by prefs.vibrationEnabled.collectAsState()
         val soundEnabled by prefs.soundEnabled.collectAsState()
         val autoCapsEnabled by prefs.autoCapsEnabled.collectAsState()
+        val cerebrasApiKey by prefs.cerebrasApiKey.collectAsState()
+        val aiMood by prefs.aiMood.collectAsState()
+
+        Card(
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text("AI Assistant Settings", style = MaterialTheme.typography.titleMedium)
+                OutlinedTextField(
+                    value = cerebrasApiKey,
+                    onValueChange = { prefs.setCerebrasApiKey(it) },
+                    label = { Text("Cerebras API Key") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Text("AI Tone", style = MaterialTheme.typography.bodyMedium)
+                segmentControl(
+                    selectedIndex = aiMood,
+                    options = listOf("Normal", "Pro", "Casual", "Friendly"),
+                    onOptionSelected = { prefs.setAiMood(it) }
+                )
+                Text("An AI button will appear on the keyboard top bar.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
 
         Card(
             modifier = Modifier.fillMaxWidth()

@@ -23,6 +23,7 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.launch
 import androidx.lifecycle.*
 import androidx.savedstate.*
 import com.example.ui.theme.MyApplicationTheme
@@ -161,6 +162,15 @@ class ComposeIME : InputMethodService(), LifecycleOwner, ViewModelStoreOwner, Sa
         updateComposingPrefix()
     }
 
+    fun replaceText(newText: String) {
+        val ic = currentInputConnection ?: return
+        val request = android.view.inputmethod.ExtractedTextRequest()
+        val textLength = ic.getExtractedText(request, 0)?.text?.length ?: 0
+        ic.deleteSurroundingText(textLength, textLength)
+        ic.commitText(newText, 1)
+        updateComposingPrefix()
+    }
+
     private fun matchCasing(prefix: String, word: String): String {
         if (prefix.isEmpty()) return word
         if (prefix[0].isUpperCase()) {
@@ -193,21 +203,41 @@ fun KeyboardView(
 ) {
     var isShifted by remember { mutableStateOf(false) }
     var isSymbols by remember { mutableStateOf(false) }
+    var isAILoading by remember { mutableStateOf(false) }
     
     val context = LocalContext.current
     val view = LocalView.current
     val audioManager = remember { context.getSystemService(android.content.Context.AUDIO_SERVICE) as AudioManager }
+    val coroutineScope = rememberCoroutineScope()
     
     val vibrationEnabled by prefs.vibrationEnabled.collectAsState()
     val soundEnabled by prefs.soundEnabled.collectAsState()
     val autoCapsEnabled by prefs.autoCapsEnabled.collectAsState()
     val keyboardLayout by prefs.keyboardLayout.collectAsState()
     val predictionEnabled by prefs.predictionEnabled.collectAsState()
+    val cerebrasApiKey by prefs.cerebrasApiKey.collectAsState()
+    val aiMood by prefs.aiMood.collectAsState()
 
     val onCheckCaps: () -> Boolean = {
         val ic = (context as? InputMethodService)?.currentInputConnection
         val mode = ic?.getCursorCapsMode(android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_CAP_SENTENCES)
         (mode ?: 0) > 0
+    }
+
+    val handleAIPress: () -> Unit = {
+        val ime = context as? ComposeIME
+        val requestText = ime?.currentInputConnection?.getExtractedText(android.view.inputmethod.ExtractedTextRequest(), 0)?.text?.toString()
+        if (!requestText.isNullOrBlank() && cerebrasApiKey.isNotBlank()) {
+            isAILoading = true
+            coroutineScope.launch {
+                val service = CerebrasApiService()
+                val response = service.rewriteText(requestText, cerebrasApiKey, aiMood)
+                isAILoading = false
+                if (response != null && !response.startsWith("Error:")) {
+                    ime.replaceText(response)
+                }
+            }
+        }
     }
 
     val keysQWERTY = listOf(
@@ -267,7 +297,7 @@ fun KeyboardView(
             .padding(bottom = 8.dp) 
     ) {
         // Predictions Strip
-        if (predictionEnabled && predictions.isNotEmpty()) {
+        if (predictionEnabled || cerebrasApiKey.isNotBlank()) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -277,40 +307,75 @@ fun KeyboardView(
                 horizontalArrangement = Arrangement.SpaceEvenly,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                for (suggestion in predictions) {
-                    val casedOpt = remember(composingPrefix, suggestion) {
-                        if (composingPrefix.isNotEmpty() && composingPrefix[0].isUpperCase()) {
-                            if (composingPrefix.all { it.isUpperCase() } && composingPrefix.length > 1) {
-                                suggestion.uppercase()
-                            } else {
-                                suggestion.replaceFirstChar { it.uppercase() }
-                            }
+                if (cerebrasApiKey.isNotBlank()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxHeight()
+                            .padding(horizontal = 8.dp)
+                            .clickable { handleAIPress() },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (isAILoading) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(20.dp),
+                                color = MaterialTheme.colorScheme.primary,
+                                strokeWidth = 2.dp
+                            )
                         } else {
-                            suggestion
+                            Text(
+                                "✨ AI",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
                         }
                     }
                     Box(
                         modifier = Modifier
-                            .weight(1f)
-                            .fillMaxHeight()
-                            .clickable { onSuggestionSelected(casedOpt) },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = casedOpt,
-                            style = MaterialTheme.typography.bodyLarge,
-                            fontWeight = FontWeight.Medium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    if (suggestion != predictions.last()) {
+                            .fillMaxHeight(0.35f)
+                            .width(1.dp)
+                            .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.2f))
+                    )
+                }
+
+                if (predictionEnabled && predictions.isNotEmpty()) {
+                    for (suggestion in predictions) {
+                        val casedOpt = remember(composingPrefix, suggestion) {
+                            if (composingPrefix.isNotEmpty() && composingPrefix[0].isUpperCase()) {
+                                if (composingPrefix.all { it.isUpperCase() } && composingPrefix.length > 1) {
+                                    suggestion.uppercase()
+                                } else {
+                                    suggestion.replaceFirstChar { it.uppercase() }
+                                }
+                            } else {
+                                suggestion
+                            }
+                        }
                         Box(
                             modifier = Modifier
-                                .fillMaxHeight(0.35f)
-                                .width(1.dp)
-                                .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.2f))
-                        )
+                                .weight(1f)
+                                .fillMaxHeight()
+                                .clickable { onSuggestionSelected(casedOpt) },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = casedOpt,
+                                style = MaterialTheme.typography.bodyLarge,
+                                fontWeight = FontWeight.Medium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        if (suggestion != predictions.last()) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxHeight(0.35f)
+                                    .width(1.dp)
+                                    .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.2f))
+                            )
+                        }
                     }
+                } else if (predictionEnabled && predictions.isEmpty()) {
+                     Spacer(modifier = Modifier.weight(1f))
                 }
             }
             Spacer(modifier = Modifier.height(4.dp))

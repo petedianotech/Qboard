@@ -26,6 +26,12 @@ class KeyboardPreferences(context: Context) {
     private val _predictionEnabled = MutableStateFlow(prefs.getBoolean("predictionEnabled", true))
     val predictionEnabled: StateFlow<Boolean> = _predictionEnabled
 
+    private val _cerebrasApiKey = MutableStateFlow(prefs.getString("cerebrasApiKey", "") ?: "")
+    val cerebrasApiKey: StateFlow<String> = _cerebrasApiKey
+
+    private val _aiMood = MutableStateFlow(prefs.getInt("aiMood", 0)) // 0: Normal, 1: Professional, 2: Casual, 3: Friendly
+    val aiMood: StateFlow<Int> = _aiMood
+
     private val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
         when (key) {
             "themeColor" -> _themeColor.value = prefs.getInt(key, 0)
@@ -34,6 +40,8 @@ class KeyboardPreferences(context: Context) {
             "autoCapsEnabled" -> _autoCapsEnabled.value = prefs.getBoolean(key, true)
             "keyboardLayout" -> _keyboardLayout.value = prefs.getInt(key, 0)
             "predictionEnabled" -> _predictionEnabled.value = prefs.getBoolean(key, true)
+            "cerebrasApiKey" -> _cerebrasApiKey.value = prefs.getString(key, "") ?: ""
+            "aiMood" -> _aiMood.value = prefs.getInt(key, 0)
         }
     }
 
@@ -47,6 +55,8 @@ class KeyboardPreferences(context: Context) {
     fun setAutoCapsEnabled(enabled: Boolean) = prefs.edit().putBoolean("autoCapsEnabled", enabled).apply()
     fun setKeyboardLayout(layout: Int) = prefs.edit().putInt("keyboardLayout", layout).apply()
     fun setPredictionEnabled(enabled: Boolean) = prefs.edit().putBoolean("predictionEnabled", enabled).apply()
+    fun setCerebrasApiKey(key: String) = prefs.edit().putString("cerebrasApiKey", key).apply()
+    fun setAiMood(mood: Int) = prefs.edit().putInt("aiMood", mood).apply()
 
     companion object {
         @Volatile
