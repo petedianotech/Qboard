@@ -64,7 +64,19 @@ fun SettingsScreen(
     var isKeyboardEnabled by remember {
         mutableStateOf(isKeyboardEnabled(context))
     }
+    var isKeyboardSelected by remember {
+        mutableStateOf(isKeyboardSelected(context))
+    }
     val scrollState = rememberScrollState()
+
+    // Periodically auto-recheck when returning from MainActivity
+    LaunchedEffect(Unit) {
+        while (true) {
+            isKeyboardEnabled = isKeyboardEnabled(context)
+            isKeyboardSelected = isKeyboardSelected(context)
+            kotlinx.coroutines.delay(1500)
+        }
+    }
 
     Column(
         modifier = modifier
@@ -82,15 +94,111 @@ fun SettingsScreen(
         ) {
             Column(
                 modifier = Modifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                Text("Step 1: Enable Keyboard", style = MaterialTheme.typography.titleMedium)
-                Text("You must enable Qboard in system settings and select it to begin.", style = MaterialTheme.typography.bodyMedium)
-                Button(onClick = {
-                    val intent = Intent(Settings.ACTION_INPUT_METHOD_SETTINGS)
-                    context.startActivity(intent)
-                }, modifier = Modifier.fillMaxWidth()) {
+                Text("Step 1: Enable & Select Qboard", style = MaterialTheme.typography.titleMedium)
+                
+                // Status Indicators
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("1. Enabled in Settings:", style = MaterialTheme.typography.bodyMedium)
+                    Spacer(modifier = Modifier.weight(1f))
+                    if (isKeyboardEnabled) {
+                        SuggestionChip(
+                            onClick = {},
+                            label = { Text("Enabled 🎉") },
+                            colors = SuggestionChipDefaults.suggestionChipColors(
+                                labelColor = MaterialTheme.colorScheme.primary
+                            )
+                        )
+                    } else {
+                        SuggestionChip(
+                            onClick = {},
+                            label = { Text("Disabled ❌") },
+                            colors = SuggestionChipDefaults.suggestionChipColors(
+                                labelColor = MaterialTheme.colorScheme.error
+                            )
+                        )
+                    }
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("2. Selected as Active:", style = MaterialTheme.typography.bodyMedium)
+                    Spacer(modifier = Modifier.weight(1f))
+                    if (isKeyboardSelected) {
+                        SuggestionChip(
+                            onClick = {},
+                            label = { Text("Selected ✅") },
+                            colors = SuggestionChipDefaults.suggestionChipColors(
+                                labelColor = MaterialTheme.colorScheme.primary
+                            )
+                        )
+                    } else {
+                        SuggestionChip(
+                            onClick = {},
+                            label = { Text("Not Active ⏳") },
+                            colors = SuggestionChipDefaults.suggestionChipColors(
+                                labelColor = MaterialTheme.colorScheme.secondary
+                            )
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(4.dp))
+
+                // Onboarding Action Buttons
+                Button(
+                    onClick = {
+                        val intent = Intent(Settings.ACTION_INPUT_METHOD_SETTINGS)
+                        context.startActivity(intent)
+                    }, 
+                    modifier = Modifier.fillMaxWidth()
+                ) {
                     Text("Go to System Settings")
+                }
+
+                Button(
+                    onClick = {
+                        isKeyboardEnabled = isKeyboardEnabled(context)
+                        isKeyboardSelected = isKeyboardSelected(context)
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (isKeyboardEnabled && isKeyboardSelected) 
+                            MaterialTheme.colorScheme.secondary 
+                        else 
+                            MaterialTheme.colorScheme.primary
+                    )
+                ) {
+                    Text("Confirm Keyboard is Enabled")
+                }
+
+                Button(
+                    onClick = {
+                        val imm = context.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
+                        imm?.showInputMethodPicker()
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = isKeyboardEnabled,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (isKeyboardSelected) 
+                            MaterialTheme.colorScheme.surfaceVariant 
+                        else 
+                            MaterialTheme.colorScheme.tertiary,
+                        contentColor = if (isKeyboardSelected) 
+                            MaterialTheme.colorScheme.onSurfaceVariant 
+                        else 
+                            MaterialTheme.colorScheme.onTertiary
+                    )
+                ) {
+                    Text(if (isKeyboardSelected) "Already Active (Switch Preference)" else "Switch to Qboard")
                 }
             }
         }
@@ -268,6 +376,18 @@ private fun isKeyboardEnabled(context: Context): Boolean {
         val imm = context.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
         val enabledMethods = imm?.enabledInputMethodList ?: emptyList()
         enabledMethods.any { it.packageName == context.packageName }
+    } catch (e: Exception) {
+        false
+    }
+}
+
+private fun isKeyboardSelected(context: Context): Boolean {
+    return try {
+        val defaultId = Settings.Secure.getString(
+            context.contentResolver,
+            Settings.Secure.DEFAULT_INPUT_METHOD
+        )
+        defaultId != null && defaultId.contains(context.packageName)
     } catch (e: Exception) {
         false
     }

@@ -63,6 +63,41 @@ private val nextWordPredictions = mapOf(
     "cerebras" to listOf("api", "key", "model", "response", "integration")
 )
 
+class ComposeInputViewOwner : LifecycleOwner, ViewModelStoreOwner, SavedStateRegistryOwner {
+    private val lifecycleRegistry = LifecycleRegistry(this)
+    private val store = ViewModelStore()
+    private val savedStateRegistryController = SavedStateRegistryController.create(this)
+
+    override val lifecycle: Lifecycle
+        get() = lifecycleRegistry
+
+    override val savedStateRegistry: SavedStateRegistry
+        get() = savedStateRegistryController.savedStateRegistry
+
+    override val viewModelStore: ViewModelStore
+        get() = store
+
+    init {
+        savedStateRegistryController.performRestore(null)
+        lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_CREATE)
+    }
+
+    fun start() {
+        lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_START)
+        lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_RESUME)
+    }
+
+    fun stop() {
+        lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_PAUSE)
+        lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_STOP)
+    }
+
+    fun destroy() {
+        lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_DESTROY)
+        store.clear()
+    }
+}
+
 class ComposeIME : InputMethodService(), LifecycleOwner, ViewModelStoreOwner, SavedStateRegistryOwner {
 
     private val lifecycleRegistry = LifecycleRegistry(this)
@@ -81,30 +116,38 @@ class ComposeIME : InputMethodService(), LifecycleOwner, ViewModelStoreOwner, Sa
     // State to hold the active composing prefix and last completed word for predictions
     private var composingPrefix by mutableStateOf("")
     private var lastCompletedWord by mutableStateOf("")
+    private var currentOwner: ComposeInputViewOwner? = null
 
     override fun onCreate() {
         super.onCreate()
         savedStateRegistryController.performRestore(null)
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_CREATE)
-        lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_START)
     }
 
     override fun onWindowShown() {
         super.onWindowShown()
+        lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_START)
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_RESUME)
+        currentOwner?.start()
     }
 
     override fun onWindowHidden() {
         super.onWindowHidden()
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_PAUSE)
+        lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_STOP)
+        currentOwner?.stop()
     }
 
     override fun onCreateInputView(): View {
+        currentOwner?.destroy()
+        val owner = ComposeInputViewOwner()
+        currentOwner = owner
+
         return ComposeView(this).apply {
-            setViewTreeLifecycleOwner(this@ComposeIME)
-            setViewTreeViewModelStoreOwner(this@ComposeIME)
-            setViewTreeSavedStateRegistryOwner(this@ComposeIME)
-            setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnLifecycleDestroyed(this@ComposeIME))
+            setViewTreeLifecycleOwner(owner)
+            setViewTreeViewModelStoreOwner(owner)
+            setViewTreeSavedStateRegistryOwner(owner)
+            setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindow)
             
             setContent {
                 val prefs = remember { KeyboardPreferences.getInstance(this@ComposeIME) }
@@ -227,6 +270,8 @@ class ComposeIME : InputMethodService(), LifecycleOwner, ViewModelStoreOwner, Sa
             lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_STOP)
         }
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_DESTROY)
+        currentOwner?.destroy()
+        currentOwner = null
         store.clear()
     }
 }
@@ -262,13 +307,13 @@ fun KeyboardView(
     val keyboardHeight by prefs.keyboardHeight.collectAsState()
 
     val onCheckCaps: () -> Boolean = {
-        val ic = (context as? InputMethodService)?.currentInputConnection
+        val ic = context.findIME()?.currentInputConnection
         val mode = ic?.getCursorCapsMode(android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_CAP_SENTENCES)
         (mode ?: 0) > 0
     }
 
     val handleAIPress: () -> Unit = {
-        val ime = context as? ComposeIME
+        val ime = context.findIME()
         val requestText = ime?.currentInputConnection?.getExtractedText(android.view.inputmethod.ExtractedTextRequest(), 0)?.text?.toString()
         if (!requestText.isNullOrBlank() && cerebrasApiKey.isNotBlank()) {
             isAILoading = true
@@ -391,7 +436,7 @@ fun KeyboardView(
                             if (clipboard.hasPrimaryClip()) {
                                 val pasteData = clipboard.primaryClip?.getItemAt(0)?.text
                                 if (pasteData != null) {
-                                    (context as? ComposeIME)?.currentInputConnection?.commitText(pasteData, 1)
+                                    context.findIME()?.currentInputConnection?.commitText(pasteData, 1)
                                 }
                             }
                         },
@@ -602,4 +647,13 @@ fun KeyboardView(
             }
         }
     }
+}
+
+private fun android.content.Context.findIME(): ComposeIME? {
+    var ctx = this
+    while (ctx is android.content.ContextWrapper) {
+        if (ctx is ComposeIME) return ctx
+        ctx = ctx.baseContext
+    }
+    return ctx as? ComposeIME
 }
