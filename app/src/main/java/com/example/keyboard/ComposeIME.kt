@@ -10,6 +10,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -23,6 +25,7 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
 import androidx.lifecycle.*
 import androidx.savedstate.*
@@ -83,12 +86,20 @@ class ComposeIME : InputMethodService(), LifecycleOwner, ViewModelStoreOwner, Sa
         super.onCreate()
         savedStateRegistryController.performRestore(null)
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_CREATE)
+        lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_START)
+    }
+
+    override fun onWindowShown() {
+        super.onWindowShown()
+        lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_RESUME)
+    }
+
+    override fun onWindowHidden() {
+        super.onWindowHidden()
+        lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_PAUSE)
     }
 
     override fun onCreateInputView(): View {
-        lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_START)
-        lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_RESUME)
-
         return ComposeView(this).apply {
             setViewTreeLifecycleOwner(this@ComposeIME)
             setViewTreeViewModelStoreOwner(this@ComposeIME)
@@ -212,8 +223,9 @@ class ComposeIME : InputMethodService(), LifecycleOwner, ViewModelStoreOwner, Sa
 
     override fun onDestroy() {
         super.onDestroy()
-        lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_PAUSE)
-        lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_STOP)
+        if (lifecycleRegistry.currentState.isAtLeast(Lifecycle.State.STARTED)) {
+            lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_STOP)
+        }
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_DESTROY)
         store.clear()
     }
@@ -232,6 +244,7 @@ fun KeyboardView(
 ) {
     var isShifted by remember { mutableStateOf(false) }
     var isSymbols by remember { mutableStateOf(false) }
+    var isEmoji by remember { mutableStateOf(false) }
     var isAILoading by remember { mutableStateOf(false) }
     
     val context = LocalContext.current
@@ -246,6 +259,7 @@ fun KeyboardView(
     val predictionEnabled by prefs.predictionEnabled.collectAsState()
     val cerebrasApiKey by prefs.cerebrasApiKey.collectAsState()
     val aiMood by prefs.aiMood.collectAsState()
+    val keyboardHeight by prefs.keyboardHeight.collectAsState()
 
     val onCheckCaps: () -> Boolean = {
         val ic = (context as? InputMethodService)?.currentInputConnection
@@ -273,21 +287,21 @@ fun KeyboardView(
         listOf("q", "w", "e", "r", "t", "y", "u", "i", "o", "p"),
         listOf("a", "s", "d", "f", "g", "h", "j", "k", "l"),
         listOf("SHIFT", "z", "x", "c", "v", "b", "n", "m", "DEL"),
-        listOf("123", ",", "SPACE", ".", "ENTER")
+        listOf("123", ",", "EMOJI", "SPACE", ".", "ENTER")
     )
 
     val keysAZERTY = listOf(
         listOf("a", "z", "e", "r", "t", "y", "u", "i", "o", "p"),
         listOf("q", "s", "d", "f", "g", "h", "j", "k", "l", "m"),
         listOf("SHIFT", "w", "x", "c", "v", "b", "n", ",", "DEL"),
-        listOf("123", ".", "SPACE", "?", "ENTER")
+        listOf("123", "EMOJI", "SPACE", "?", "ENTER")
     )
 
     val keysQWERTZ = listOf(
         listOf("q", "w", "e", "r", "t", "z", "u", "i", "o", "p"),
         listOf("a", "s", "d", "f", "g", "h", "j", "k", "l"),
         listOf("SHIFT", "y", "x", "c", "v", "b", "n", "m", "DEL"),
-        listOf("123", ",", "SPACE", ".", "ENTER")
+        listOf("123", ",", "EMOJI", "SPACE", ".", "ENTER")
     )
 
     val keysSelected = when (keyboardLayout) {
@@ -300,7 +314,7 @@ fun KeyboardView(
         listOf("1", "2", "3", "4", "5", "6", "7", "8", "9", "0"),
         listOf("@", "#", "$", "%", "&", "-", "+", "(", ")"),
         listOf("ABC", "*", "\"", "'", ":", ";", "!", "?", "DEL"),
-        listOf("123", ",", "SPACE", ".", "ENTER") 
+        listOf("123", ",", "EMOJI", "SPACE", ".", "ENTER") 
     )
 
     val keys = if (isSymbols) keysSymbols else keysSelected
@@ -368,6 +382,30 @@ fun KeyboardView(
                     )
                 }
 
+                Box(
+                    modifier = Modifier
+                        .fillMaxHeight()
+                        .padding(horizontal = 8.dp)
+                        .clickable {
+                            val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                            if (clipboard.hasPrimaryClip()) {
+                                val pasteData = clipboard.primaryClip?.getItemAt(0)?.text
+                                if (pasteData != null) {
+                                    (context as? ComposeIME)?.currentInputConnection?.commitText(pasteData, 1)
+                                }
+                            }
+                        },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("📋", style = MaterialTheme.typography.bodyLarge)
+                }
+                Box(
+                    modifier = Modifier
+                        .fillMaxHeight(0.35f)
+                        .width(1.dp)
+                        .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.2f))
+                )
+
                 if (predictionEnabled && predictions.isNotEmpty()) {
                     for (suggestion in predictions) {
                         val casedOpt = remember(composingPrefix, suggestion) {
@@ -412,85 +450,153 @@ fun KeyboardView(
         }
 
         // Keyboard Keys
-        for (row in keys) {
+        if (isEmoji) {
+            val emojis = listOf("😀", "😂", "🥺", "😭", "😍", "🙏", "😊", "✨", "❤️", "👍", "🔥", "🥰", "🎉", "💯", "🤔", "🙌", "😘", "😎", "💪", "🤩", "😁", "😅", "😆", "😇", "😉", "😋", "😜", "🤪", "😝", "🤑", "🤗", "🤭", "🤫", "🤐", "🤨", "😐", "😑", "😶", "😏", "😒", "🙄", "😬", "🤥", "😌", "😔", "😪", "🤤", "😴", "😷", "🤒", "🤕", "🤢", "🤮", "🤧", "🥵", "🥶", "🥴", "😵", "🤯")
+            LazyVerticalGrid(
+                columns = GridCells.Fixed(8),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height((54 * 4 * keyboardHeight).dp)
+            ) {
+                items(emojis.size) { index ->
+                    Box(
+                        modifier = Modifier
+                            .height((48 * keyboardHeight).dp)
+                            .clickable {
+                                onKeyPressed(emojis[index])
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(emojis[index], fontSize = 24.sp)
+                    }
+                }
+            }
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(vertical = 4.dp),
                 horizontalArrangement = Arrangement.Center
             ) {
-                for (key in row) {
-                    val weight = when(key) {
-                        "SPACE" -> 4f
-                        "SHIFT", "DEL", "ENTER", "123", "ABC" -> 1.5f
-                        else -> 1f
-                    }
-                    Box(
-                        modifier = Modifier
-                            .weight(weight)
-                            .height(54.dp)
-                            .padding(horizontal = 2.dp)
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(
-                                when (key) {
-                                    "ENTER" -> MaterialTheme.colorScheme.primary
-                                    "SHIFT", "DEL", "123", "ABC" -> MaterialTheme.colorScheme.surfaceVariant
-                                    else -> MaterialTheme.colorScheme.surface
-                                }
-                            )
-                            .pointerInput(key) {
-                                detectTapGestures(
-                                    onPress = {
-                                        if (vibrationEnabled) {
-                                            view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                                        }
-                                        if (soundEnabled) {
-                                            audioManager.playSoundEffect(AudioManager.FX_KEYPRESS_STANDARD)
-                                        }
-                                        when (key) {
-                                            "DEL" -> {
-                                                onDeletePressed()
-                                                if (autoCapsEnabled) isShifted = onCheckCaps()
+                Box(
+                    modifier = Modifier
+                        .weight(1.5f)
+                        .height((54 * keyboardHeight).dp)
+                        .padding(horizontal = 2.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                        .clickable { isEmoji = false },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("ABC", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
+                }
+                Box(
+                    modifier = Modifier
+                        .weight(4f)
+                        .height((54 * keyboardHeight).dp)
+                        .padding(horizontal = 2.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(MaterialTheme.colorScheme.surface)
+                        .clickable { onSpacePressed() },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("␣", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
+                }
+                Box(
+                    modifier = Modifier
+                        .weight(1.5f)
+                        .height((54 * keyboardHeight).dp)
+                        .padding(horizontal = 2.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                        .clickable { onDeletePressed() },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("⌫", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
+                }
+            }
+        } else {
+            for (row in keys) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp),
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    for (key in row) {
+                        val weight = when(key) {
+                            "SPACE" -> 4f
+                            "SHIFT", "DEL", "ENTER", "123", "ABC" -> 1.5f
+                            else -> 1f
+                        }
+                        Box(
+                            modifier = Modifier
+                                .weight(weight)
+                                .height((54 * keyboardHeight).dp)
+                                .padding(horizontal = 2.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(
+                                    when (key) {
+                                        "ENTER" -> MaterialTheme.colorScheme.primary
+                                        "SHIFT", "DEL", "123", "ABC", "EMOJI" -> MaterialTheme.colorScheme.surfaceVariant
+                                        else -> MaterialTheme.colorScheme.surface
+                                    }
+                                )
+                                .pointerInput(key) {
+                                    detectTapGestures(
+                                        onPress = {
+                                            if (vibrationEnabled) {
+                                                view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
                                             }
-                                            "SPACE" -> {
-                                                onSpacePressed()
-                                                if (autoCapsEnabled) isShifted = onCheckCaps()
+                                            if (soundEnabled) {
+                                                audioManager.playSoundEffect(AudioManager.FX_KEYPRESS_STANDARD)
                                             }
-                                            "ENTER" -> {
-                                                onEnterPressed()
-                                                if (autoCapsEnabled) isShifted = onCheckCaps()
-                                            }
-                                            "SHIFT" -> isShifted = !isShifted
-                                            "123" -> isSymbols = true
-                                            "ABC" -> isSymbols = false
-                                            else -> {
-                                                val output = if (isShifted && !isSymbols) key.uppercase() else key
-                                                onKeyPressed(output)
-                                                if (isShifted) {
-                                                    isShifted = false // Turn off shift instantly after standard key
-                                                } else if (autoCapsEnabled) {
-                                                    isShifted = onCheckCaps()
+                                            when (key) {
+                                                "DEL" -> {
+                                                    onDeletePressed()
+                                                    if (autoCapsEnabled) isShifted = onCheckCaps()
+                                                }
+                                                "SPACE" -> {
+                                                    onSpacePressed()
+                                                    if (autoCapsEnabled) isShifted = onCheckCaps()
+                                                }
+                                                "ENTER" -> {
+                                                    onEnterPressed()
+                                                    if (autoCapsEnabled) isShifted = onCheckCaps()
+                                                }
+                                                "SHIFT" -> isShifted = !isShifted
+                                                "123" -> isSymbols = true
+                                                "ABC" -> isSymbols = false
+                                                "EMOJI" -> isEmoji = true
+                                                else -> {
+                                                    val output = if (isShifted && !isSymbols) key.uppercase() else key
+                                                    onKeyPressed(output)
+                                                    if (isShifted) {
+                                                        isShifted = false // Turn off shift instantly after standard key
+                                                    } else if (autoCapsEnabled) {
+                                                        isShifted = onCheckCaps()
+                                                    }
                                                 }
                                             }
                                         }
-                                    }
-                                )
-                            },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = when (key) {
-                                "DEL" -> "⌫"
-                                "SHIFT" -> "⇧"
-                                "ENTER" -> "↩"
-                                "SPACE" -> "␣"
-                                "123" -> "?123"
-                                else -> if (isShifted && !isSymbols) key.uppercase() else key
-                            },
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Medium,
-                            color = if (key == "ENTER") MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
-                        )
+                                    )
+                                },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = when (key) {
+                                    "DEL" -> "⌫"
+                                    "SHIFT" -> "⇧"
+                                    "ENTER" -> "↩"
+                                    "SPACE" -> "␣"
+                                    "123" -> "?123"
+                                    "EMOJI" -> "😊"
+                                    else -> if (isShifted && !isSymbols) key.uppercase() else key
+                                },
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Medium,
+                                color = if (key == "ENTER") MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
+                            )
+                        }
                     }
                 }
             }

@@ -115,6 +115,17 @@ fun SettingsScreen(
                 )
 
                 Spacer(modifier = Modifier.height(4.dp))
+                
+                val keyboardHeight by prefs.keyboardHeight.collectAsState()
+                Text("Keyboard Height: ${(keyboardHeight * 100).toInt()}%", style = MaterialTheme.typography.bodyMedium)
+                Slider(
+                    value = keyboardHeight,
+                    onValueChange = { prefs.setKeyboardHeight(it) },
+                    valueRange = 0.5f..1.5f,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Spacer(modifier = Modifier.height(4.dp))
                 PreferenceSwitch("Show Prediction Strip", predictionEnabled) { prefs.setPredictionEnabled(it) }
             }
         }
